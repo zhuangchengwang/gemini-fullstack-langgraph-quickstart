@@ -1,12 +1,17 @@
-import { useStream } from "@langchain/langgraph-sdk/react";
 import type { Message } from "@langchain/langgraph-sdk";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { ProcessedEvent } from "@/components/ActivityTimeline";
 import { WelcomeScreen } from "@/components/WelcomeScreen";
 import { ChatMessagesView } from "@/components/ChatMessagesView";
 import { Button } from "@/components/ui/button";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { LoginModal } from "@/components/auth/LoginModal";
+import { RegisterModal } from "@/components/auth/RegisterModal";
+import { UserMenu } from "@/components/auth/UserMenu";
+import { useAuthenticatedStream } from "@/hooks/useAuthenticatedStream";
 
-export default function App() {
+function AppContent() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [processedEventsTimeline, setProcessedEventsTimeline] = useState<
     ProcessedEvent[]
   >([]);
@@ -16,7 +21,7 @@ export default function App() {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const hasFinalizeEventOccurredRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const thread = useStream<{
+  const thread = useAuthenticatedStream<{
     messages: Message[];
     initial_search_query_count: number;
     max_research_loops: number;
@@ -149,9 +154,31 @@ export default function App() {
     window.location.reload();
   }, [thread]);
 
+  // Show loading screen while checking authentication
+  if (authLoading) {
+    return (
+      <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
+        <main className="h-full w-full max-w-4xl mx-auto flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+            <p className="text-neutral-400">Loading...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen bg-neutral-800 text-neutral-100 font-sans antialiased">
-      <main className="h-full w-full max-w-4xl mx-auto">
+      <main className="h-full w-full max-w-4xl mx-auto flex flex-col">
+        {/* User menu when authenticated */}
+        {isAuthenticated && (
+          <div className="p-4 border-b border-neutral-700">
+            <UserMenu />
+          </div>
+        )}
+        
+        <div className={`flex-1 ${isAuthenticated ? 'h-[calc(100vh-96px)]' : 'h-full'}`}>
           {thread.messages.length === 0 ? (
             <WelcomeScreen
               handleSubmit={handleSubmit}
@@ -183,7 +210,20 @@ export default function App() {
               historicalActivities={historicalActivities}
             />
           )}
+        </div>
       </main>
+      
+      {/* Authentication modals */}
+      <LoginModal />
+      <RegisterModal />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
