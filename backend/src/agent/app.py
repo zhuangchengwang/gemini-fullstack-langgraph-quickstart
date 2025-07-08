@@ -29,30 +29,9 @@ app.add_middleware(
 # Include authentication routes
 app.include_router(auth_router)
 
-# Check if authentication should be enforced (default: True to protect LangGraph APIs)
-ENFORCE_AUTH = os.getenv("ENFORCE_AUTH", "true").lower() == "true"
-
-# LangGraph API endpoints that should be protected by default
-PROTECTED_LANGGRAPH_PATHS = [
-    "/threads",
-    "/runs", 
-    "/assistants",
-    "/crons",
-    "/store"
-]
-
-# Public endpoints that don't require authentication
-PUBLIC_PATHS = [
-    "/app",          # Frontend routes
-    "/auth",         # Authentication routes  
-    "/static",       # Static files
-    "/",             # Root
-    "/docs",         # API documentation
-    "/openapi.json", # OpenAPI spec
-    "/redoc",        # ReDoc documentation
-    "/health",       # Health check (if exists)
-    "/ping"          # Ping endpoint (if exists)
-]
+# 注意：LangGraph API 现在通过 langgraph.json 中的 auth 配置进行保护
+# 这些 API 包括: /threads, /runs, /assistants, /crons, /store
+print("🔐 LangGraph API 现在通过官方认证机制保护")
 
 # === 扩展 LangGraph API 的示例 ===
 
@@ -87,48 +66,15 @@ async def get_enhanced_threads(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Enhanced API error: {str(e)}")
 
-# 2. 代理模式示例 - 拦截并增强现有接口
-@app.api_route("/threads/{thread_id}", methods=["GET", "PUT", "DELETE"])
-async def enhanced_thread_operations(thread_id: str, request: Request):
-    """代理并增强单个线程的操作"""
-    method = request.method
-    username = getattr(request.state, 'username', 'anonymous')
-    
-    # 记录操作日志（示例）
-    print(f"用户 {username} 对线程 {thread_id} 执行 {method} 操作")
-    
-    # 转发到原始 LangGraph API
-    try:
-        async with httpx.AsyncClient() as client:
-            if method == "GET":
-                response = await client.get(f"http://localhost:2024/threads/{thread_id}")
-            elif method == "PUT":
-                body = await request.body()
-                response = await client.put(f"http://localhost:2024/threads/{thread_id}", content=body)
-            elif method == "DELETE":
-                response = await client.delete(f"http://localhost:2024/threads/{thread_id}")
-            
-            # 返回增强的响应
-            if response.status_code == 200:
-                data = response.json()
-                data["_metadata"] = {
-                    "accessed_by": username,
-                    "api_version": "enhanced",
-                    "operation": method
-                }
-                return data
-            else:
-                raise HTTPException(status_code=response.status_code, detail=response.text)
-                
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"Upstream service error: {str(e)}")
+# 注意：移除了代理路由以避免与 LangGraph 原生 API 冲突
+# 如果需要拦截原生 API，应该在中间件中处理，而不是创建新路由
 
-# 3. 完全自定义的新接口
+# 2. 完全自定义的新接口
 @app.get("/analytics/threads")
 async def get_thread_analytics():
     """全新的分析接口"""
     try:
-        # 获取原始数据
+        # 获取原始数据 - 注意：在生产环境中这里应该直接访问内部数据而不是HTTP调用
         async with httpx.AsyncClient() as client:
             response = await client.get("http://localhost:2024/threads")
             threads = response.json() if response.status_code == 200 else []
@@ -156,72 +102,44 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "LangGraph Agent API",
-        "authentication": "enabled" if ENFORCE_AUTH else "disabled",
-        "protected_paths": PROTECTED_LANGGRAPH_PATHS if ENFORCE_AUTH else [],
-        "public_paths": PUBLIC_PATHS
+        "authentication": "enabled via LangGraph",
+        "auth_method": "JWT Bearer Token",
+        "protected_apis": ["/threads", "/runs", "/assistants", "/crons", "/store"]
     }
 
 @app.get("/auth-info")
 async def auth_info():
     """获取认证配置信息"""
     return {
-        "authentication_required": ENFORCE_AUTH,
-        "protected_endpoints": PROTECTED_LANGGRAPH_PATHS,
-        "public_endpoints": PUBLIC_PATHS,
+        "authentication_method": "LangGraph Official Auth",
+        "protected_endpoints": ["/threads", "/runs", "/assistants", "/crons", "/store"],
+        "public_endpoints": ["/app", "/auth", "/static", "/health", "/auth-info"],
         "login_endpoint": "/auth/login",
-        "register_endpoint": "/auth/register",
-        "user_info_endpoint": "/auth/me"
+        "register_endpoint": "/auth/register", 
+        "user_info_endpoint": "/auth/me",
+        "auth_header_format": "Authorization: Bearer <jwt_token>",
+        "note": "LangGraph APIs are now protected by official LangGraph auth mechanism"
     }
 
-# JWT Authentication middleware for LangGraph API routes
-@app.middleware("http")
-async def jwt_auth_middleware(request: Request, call_next):
-    """JWT Authentication middleware to protect LangGraph API routes.
+@app.get("/test-auth")
+async def test_auth_status(request: Request):
+    """测试认证状态的接口"""
+    auth_header = request.headers.get("Authorization")
+    username = getattr(request.state, 'username', None)
     
-    By default, all LangGraph APIs require authentication.
-    Set ENFORCE_AUTH=false environment variable to disable authentication protection.
-    """
-    path = request.url.path
-    
-    # Check if path is in public routes (no auth required)
-    is_public_path = any(path.startswith(public_path) for public_path in PUBLIC_PATHS)
-    
-    if is_public_path:
-        response = await call_next(request)
-        return response
-    
-    # Check if authentication is enforced and path needs protection
-    needs_auth = False
-    
-    if ENFORCE_AUTH:
-        # Check if this is a LangGraph API path that needs protection
-        is_langgraph_api = any(path.startswith(protected_path) for protected_path in PROTECTED_LANGGRAPH_PATHS)
-        
-        if is_langgraph_api:
-            needs_auth = True
-    
-    # Enforce authentication if required
-    if needs_auth:
-        username = check_auth_header(request)
-        if not username:
-            return JSONResponse(
-                status_code=401,
-                content={
-                    "detail": "Authentication required for LangGraph API access",
-                    "error_code": "UNAUTHORIZED",
-                    "required_header": "Authorization: Bearer <jwt_token>",
-                    "login_endpoint": "/auth/login"
-                }
-            )
-        
-        # Add username to request state for potential use in enhanced endpoints
-        request.state.username = username
-        
-        # Log API access for security auditing
-        print(f"🔐 用户 '{username}' 访问 LangGraph API: {request.method} {path}")
-    
-    response = await call_next(request)
-    return response
+    return {
+        "path": "/test-auth",
+        "is_protected": False,  # 这个接口本身不受保护
+        "auth_header_present": bool(auth_header),
+        "auth_header_preview": auth_header[:20] + "..." if auth_header else None,
+        "username_from_state": username,
+        "enforce_auth_setting": ENFORCE_AUTH,
+        "test_protected_paths": {
+            "threads_protected": "/threads" in [p for p in PROTECTED_LANGGRAPH_PATHS if ENFORCE_AUTH],
+            "runs_protected": "/runs" in [p for p in PROTECTED_LANGGRAPH_PATHS if ENFORCE_AUTH]
+        },
+        "suggestion": "尝试访问 /threads 来测试认证是否工作"
+    }
 
 
 def create_frontend_router(build_dir="../frontend/dist"):

@@ -150,8 +150,15 @@ function AppContent() {
   );
 
   const handleCancel = useCallback(() => {
+    // 停止当前的 stream
     thread.stop();
-    window.location.reload();
+    
+    // 重置相关状态，而不是重新加载页面
+    setProcessedEventsTimeline([]);
+    setError(null);
+    hasFinalizeEventOccurredRef.current = false;
+    
+    // 不需要重新加载页面，保持用户登录状态
   }, [thread]);
 
   // Show loading screen while checking authentication
