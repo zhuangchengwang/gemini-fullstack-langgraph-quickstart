@@ -12,7 +12,7 @@ dev-frontend:
 
 dev-backend:
 	@echo "Starting backend development server..."
-	@cd backend && langgraph dev
+	@cd backend && conda activate py3_12 && langgraph dev
 
 # Run frontend and backend concurrently
 dev:

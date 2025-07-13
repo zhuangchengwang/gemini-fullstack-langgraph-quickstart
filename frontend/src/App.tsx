@@ -144,6 +144,21 @@ function AppContent() {
         initial_search_query_count: initial_search_query_count,
         max_research_loops: max_research_loops,
         reasoning_model: model,
+        // 传递用户相关参数到 LangGraph 状态
+        user_id: "current_user", // 在实际应用中从认证上下文获取
+        user_metadata: {
+          search_effort: effort,
+          preferred_model: model,
+          session_id: Date.now().toString()
+        }
+      }, {
+        configurable: {
+          // 通过 RunnableConfig 传递配置
+          user_preference: "chinese",
+          search_region: "zh-CN",
+          personalization_enabled: true,
+          search_effort: effort
+        }
       });
     },
     [thread]

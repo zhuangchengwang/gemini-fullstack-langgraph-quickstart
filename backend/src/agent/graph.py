@@ -30,6 +30,7 @@ from agent.utils import (
     insert_citation_markers,
     resolve_urls,
 )
+from agent.user_context import get_user_context, personalize_search_query, get_user_specific_prompt, get_param_value, log_request_context
 
 load_dotenv()
 
@@ -55,6 +56,24 @@ def generate_query(state: OverallState, config: RunnableConfig) -> QueryGenerati
         Dictionary with state update, including search_query key containing the generated queries
     """
     configurable = Configuration.from_runnable_config(config)
+    
+    # 获取完整的用户上下文（包含HTTP请求参数）
+    user_context = get_user_context(config)
+    log_request_context(user_context)
+    
+    # 从请求参数获取查询生成配置
+    query_style = get_param_value(user_context, "query_style", "comprehensive")
+    search_focus = get_param_value(user_context, "search_focus", "general")
+    max_queries = get_param_value(user_context, "max_queries", state.get("initial_search_query_count"))
+    
+    print(f"🔍 生成查询配置2: style={query_style}, focus={search_focus}, max={max_queries}")
+    
+    # 根据请求参数调整查询数量
+    if isinstance(max_queries, (str, int)):
+        try:
+            state["initial_search_query_count"] = int(max_queries)
+        except:
+            pass
 
     # check for custom initial search query count
     if state.get("initial_search_query_count") is None:
@@ -106,9 +125,26 @@ def web_research(state: WebSearchState, config: RunnableConfig) -> OverallState:
     """
     # Configure
     configurable = Configuration.from_runnable_config(config)
+    
+    # 获取用户上下文并个性化搜索
+    user_context = get_user_context(config)
+    original_query = state["search_query"]
+    
+    # 从请求参数获取搜索配置
+    search_timeout = get_param_value(user_context, "search_timeout", 30)
+    result_limit = get_param_value(user_context, "result_limit", 10)
+    search_language = get_param_value(user_context, "search_language", user_context.get("language_preference", "en"))
+    
+    personalized_query = personalize_search_query(original_query, user_context)
+    
+    print(f"🔍 Web Research for user {user_context['username']}")
+    print(f"📝 Original query: {original_query}")
+    print(f"🎯 Personalized query: {personalized_query}")
+    print(f"⚙️ Search config: timeout={search_timeout}s, limit={result_limit}, lang={search_language}")
+    
     formatted_prompt = web_searcher_instructions.format(
         current_date=get_current_date(),
-        research_topic=state["search_query"],
+        research_topic=personalized_query,  # 使用个性化后的查询
     )
 
     # Uses the google genai client as the langchain client doesn't return grounding metadata
@@ -233,13 +269,20 @@ def finalize_answer(state: OverallState, config: RunnableConfig):
     configurable = Configuration.from_runnable_config(config)
     reasoning_model = state.get("reasoning_model") or configurable.answer_model
 
-    # Format the prompt
+    # 获取用户上下文并个性化回答
+    user_context = get_user_context(config)
+    print(f"🎯 正在为用户 {user_context['username']} 生成个性化回答")
+
+    # Format the prompt with user context
     current_date = get_current_date()
-    formatted_prompt = answer_instructions.format(
+    base_prompt = answer_instructions.format(
         current_date=current_date,
         research_topic=get_research_topic(state["messages"]),
         summaries="\n---\n\n".join(state["web_research_result"]),
     )
+    
+    # 根据用户偏好生成个性化提示
+    formatted_prompt = get_user_specific_prompt(base_prompt, user_context)
 
     # init Reasoning Model, default to Gemini 2.5 Flash
     llm = ChatGoogleGenerativeAI(

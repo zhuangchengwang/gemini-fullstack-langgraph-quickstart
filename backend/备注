@@ -1,4 +1,6 @@
-1. conda activate py_3_12 环境
+1. conda activate py3_12 环境
 2. 终端要使用代理
 
 根目录 make dev
+
+kill -9 $(lsof -ti:2024)

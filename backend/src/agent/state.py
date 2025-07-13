@@ -19,6 +19,9 @@ class OverallState(TypedDict):
     max_research_loops: int
     research_loop_count: int
     reasoning_model: str
+    # 添加用户信息字段
+    user_id: str
+    user_metadata: dict
 
 
 class ReflectionState(TypedDict):
