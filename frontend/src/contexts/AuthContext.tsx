@@ -44,9 +44,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showRegisterModal, setShowRegisterModal] = useState(false);
 
-  const API_BASE_URL = import.meta.env.DEV 
-    ? "http://localhost:2024" 
-    : "http://localhost:8123";
+  // 临时强制使用开发环境端口
+  const API_BASE_URL = "http://localhost:2024";
 
   // Load token from localStorage on mount
   useEffect(() => {

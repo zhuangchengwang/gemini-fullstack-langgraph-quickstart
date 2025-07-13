@@ -26,10 +26,17 @@ export function useAuthenticatedStream<T extends Record<string, unknown>>(option
   
   // 为 LangGraph SDK 正确配置认证，确保所有内部请求都使用认证
   const authenticatedOptions = useMemo(() => {
+    // 基础配置，确保所有情况下都有正确的apiUrl
+    const baseOptions = {
+      ...options,
+      apiUrl: options.apiUrl, // 强制使用传入的apiUrl
+      assistantId: options.assistantId,
+      streamMode: 'values',
+    };
+
     if (!token || !client) {
       return {
-        ...options,
-        // 未认证时不传递 client，这会阻止任何API调用
+        ...baseOptions,
         headers: {
           'Content-Type': 'application/json',
         }
@@ -37,7 +44,7 @@ export function useAuthenticatedStream<T extends Record<string, unknown>>(option
     }
 
     return {
-      ...options,
+      ...baseOptions,
       // 强制使用带认证的 client，确保所有 SDK 内部请求都经过这个 client
       client: client,
       // 同时也在 options 级别设置 headers 作为备用
@@ -51,8 +58,6 @@ export function useAuthenticatedStream<T extends Record<string, unknown>>(option
         'X-Language': navigator.language,
         ...options.headers,
       },
-      // 确保 SDK 使用正确的流模式
-      streamMode: 'values',
     };
   }, [token, client, options]);
   
@@ -60,18 +65,15 @@ export function useAuthenticatedStream<T extends Record<string, unknown>>(option
     hasToken: !!token, 
     isAuthenticated,
     apiUrl: options.apiUrl,
+    finalApiUrl: authenticatedOptions.apiUrl, // 添加最终使用的URL
     headers: authenticatedOptions.headers,
     assistantId: options.assistantId,
-    hasClient: !!client
+    hasClient: !!client,
+    hasCustomClient: !!authenticatedOptions.client, // 添加client状态
   });
   
   // 只有在有认证信息时才创建 stream
-  const stream = useStream<T>(token && client ? authenticatedOptions : {
-    ...options,
-    // 传递一个无效的配置，防止未认证的请求
-    apiUrl: '',
-    assistantId: '',
-  });
+  const stream = useStream<T>(authenticatedOptions);
   
   // Check authentication status and show login modal if needed
   useEffect(() => {
