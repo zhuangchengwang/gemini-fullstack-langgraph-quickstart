@@ -87,14 +87,28 @@ def check_auth_header(request: Request) -> Optional[str]:
 
 # LangGraph API paths that require authentication
 PROTECTED_PATHS = [
-    "/threads",
+    "/threads/enhanced",  # 自定义增强版threads接口需要认证
+    "/threads/create",    # 创建线程需要认证
+    "/threads/delete",    # 删除线程需要认证
     "/runs", 
     "/assistants",
     "/crons",
     "/store"
 ]
 
+# 不需要认证的特定路径
+UNPROTECTED_PATHS = [
+    "/threads/{thread_id}/history"  # 线程历史记录不需要认证
+]
 
 def requires_auth(path: str) -> bool:
     """Check if a path requires authentication."""
+    # 首先检查是否在不需要认证的路径列表中
+    for unprotected_path in UNPROTECTED_PATHS:
+        # 将路径模板中的参数替换为通配符进行匹配
+        pattern = unprotected_path.replace("{thread_id}", "[^/]+")
+        if path.startswith(pattern.split("{")[0]) and path.endswith(pattern.split("}")[-1]):
+            return False
+    
+    # 如果不在不需要认证的路径列表中，则检查是否需要认证
     return any(path.startswith(prefix) for prefix in PROTECTED_PATHS) 

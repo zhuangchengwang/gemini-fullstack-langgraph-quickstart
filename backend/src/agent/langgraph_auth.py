@@ -41,6 +41,23 @@ async def authenticate(
     print(f"🔗 查询参数: {query_params}")
     print(f"📋 路径参数: {path_params}")
     
+    # 检查是否是不需要认证的路径
+    if "/threads/" in path and path.endswith("/history"):
+        print(f"✅ LangGraph Auth: 跳过认证 - 公开访问路径: {path}")
+        return {
+            "identity": "anonymous",
+            "username": "anonymous",
+            "is_authenticated": False,
+            "roles": [],
+            "permissions": ["read_history"],
+            "request_context": {
+                "method": method,
+                "path": path,
+                "query_params": query_params,
+                "path_params": path_params
+            }
+        }
+    
     # 解析 Bearer token
     if not authorization or not authorization.startswith("Bearer "):
         print(f"❌ LangGraph Auth: 无效的 Authorization 格式")
